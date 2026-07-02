@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OR-Tools Lab — Lập kế hoạch vận tải</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="css/lab.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>OR-Tools Lab <span>— Mini Lab VRP + Convoy</span></h1>
+  <div class="balance-control">
+    <label for="balance-level" title="0% = ít km/ít xe · 100% = chia đều đơn">
+      Cân bằng: <output id="balance-value">80</output>%
+    </label>
+    <input type="range" id="balance-level" min="0" max="100" value="80" step="5">
+    <span class="balance-hint">← ít km · đều đơn →</span>
+  </div>
+  <button id="btn-plan" class="btn btn-primary">Lập kế hoạch</button>
+</header>
+
+<main class="layout">
+  <section class="panel panel-fleet">
+    <div class="panel-head">
+      <h2>Đội xe <small id="fleet-summary">—</small></h2>
+      <div class="actions fleet-actions">
+        <label class="inline-label">
+          Tổng số xe:
+          <input type="number" id="fleet-size" min="1" max="50" value="10" class="input-sm">
+        </label>
+        <button type="button" id="btn-fleet-apply" class="btn btn-ghost">Áp dụng</button>
+        <span class="fleet-presets">
+          <button type="button" class="btn btn-ghost btn-preset" data-size="6">6 xe</button>
+          <button type="button" class="btn btn-ghost btn-preset" data-size="10">10 xe</button>
+          <button type="button" class="btn btn-ghost btn-preset" data-size="20">20 xe</button>
+        </span>
+      </div>
+    </div>
+    <div class="fleet-available-bar">
+      <label for="available-count">Xe Available (solver dùng):</label>
+      <input type="range" id="available-count" min="0" max="10" value="10" step="1">
+      <output id="available-count-value">10</output>
+      <span class="muted">/ <span id="fleet-total-label">10</span></span>
+      <button type="button" id="btn-all-available" class="btn btn-ghost">Tất cả Available</button>
+    </div>
+    <div class="table-wrap table-scroll fleet-table">
+      <table id="tbl-vehicles">
+        <thead>
+          <tr>
+            <th>Mã</th><th>Biển số</th><th>Status</th>
+            <th>KG</th><th>m³</th><th>Thích</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Thông tin kho</h2>
+    <div id="warehouse-info" class="info-card"></div>
+    <label class="inline-label">
+      Khả năng bốc đồng thời:
+      <select id="load-capacity">
+        <option value="1">1 xe / lần</option>
+        <option value="2" selected>2 xe / lần</option>
+      </select>
+    </label>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head">
+      <h2>Đơn hàng <small>50 đơn con — 10 mã — cùng mã cùng tọa độ</small></h2>
+      <div class="actions">
+        <button id="btn-select-code" class="btn btn-ghost">Chọn theo mã ORD-001</button>
+        <button id="btn-select-all" class="btn btn-ghost">Chọn tất cả</button>
+        <button id="btn-clear" class="btn btn-ghost">Bỏ chọn</button>
+        <span id="selected-count" class="badge">0 đã chọn</span>
+      </div>
+    </div>
+    <div class="table-wrap table-scroll">
+      <table id="tbl-orders">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="chk-all" title="Chọn tất cả"></th>
+            <th>Mã đơn con</th><th>Mã đơn</th>
+            <th>KG</th><th>m³</th><th>Lat</th><th>Lng</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel panel-wide" id="result-section" hidden>
+    <h2>Kế hoạch vận tải</h2>
+    <p id="plan-message" class="message"></p>
+    <div class="stats" id="plan-stats"></div>
+
+    <h3>Tổng đơn theo xe</h3>
+    <div id="vehicle-cards" class="vehicle-cards" hidden></div>
+
+    <h3>Đánh giá tối ưu OR-Tools</h3>
+    <div id="optimization-insights" class="insight-list" hidden></div>
+
+    <h3>Chi tiết tuyến</h3>
+    <div class="table-wrap table-scroll">
+      <table id="tbl-plan">
+        <thead>
+          <tr>
+            <th>#</th><th>Xe</th><th>Biển số</th><th>Đơn</th><th>Mã đơn</th>
+            <th>Xuất phát (phút)</th><th>Đến giao (phút)</th>
+            <th>KG</th><th>m³</th><th>Lat</th><th>Lng</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h3>Bản đồ tuyến</h3>
+    <p id="map-status" class="map-status" hidden></p>
+    <div id="map-legend" class="map-legend" hidden></div>
+    <div id="map" class="map-container" hidden></div>
+
+    <h3>Lịch bốc kho (Dock)</h3>
+    <div class="table-wrap">
+      <table id="tbl-dock">
+        <thead>
+          <tr>
+            <th>Xe</th><th>Biển số</th><th>Bắt đầu bốc</th><th>Xong bốc / XP</th><th>Dùng?</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h3>Kiểm tra điều kiện</h3>
+    <div class="table-wrap">
+      <table id="tbl-validation">
+        <thead><tr><th>Quy tắc</th><th>Chi tiết</th><th>Kết quả</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h3>Convoy — cùng mã đơn, khác xe</h3>
+    <div class="table-wrap">
+      <table id="tbl-convoy">
+        <thead>
+          <tr>
+            <th>Mã đơn</th><th>Xe</th><th>Đơn con</th>
+            <th>Xuất phát</th><th>Giờ giao từng điểm</th>
+            <th>Cùng XP?</th><th>Cùng giao?</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="js/lab.js"></script>
+</body>
+</html>
