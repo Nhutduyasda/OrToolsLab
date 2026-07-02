@@ -103,9 +103,9 @@ app.MapPatch("/api/vehicles/{id}/status", (string id, VehicleStatusRequest req) 
   return Results.Ok(new { fleet = FleetMeta(), vehicle = MapVehicle(FleetStore.All.First(v => v.Id == id)) });
 });
 
-app.MapGet("/api/orders", () => SampleData.Orders);
+app.MapGet("/api/orders", async (AppDbContext db) => await db.Orders.ToListAsync());
 
-app.MapGet("/api/warehouse", () => SampleData.Warehouse);
+app.MapGet("/api/warehouse", async (AppDbContext db) => await db.Warehouses.FirstOrDefaultAsync());
 
 // 1. Lập kế hoạch (Lưu Draft)
 app.MapPost("/api/plan", async (PlanRequest req, AppDbContext db, DraftPlanService draftService) =>
@@ -180,12 +180,39 @@ app.MapGet("/api/orders/export/pdf", async (string planId, DraftPlanService draf
     return Results.File(fileContent, "application/pdf", $"BaoCaoLichTrinh_{planId}.pdf");
 });
 
-app.MapPut("/api/warehouse/load-capacity", (WarehouseLoadRequest req) =>
+app.MapPut("/api/warehouse/load-capacity", async (WarehouseLoadRequest req, AppDbContext db) =>
 {
   if (req.ConcurrentLoadCapacity is < 1 or > 2)
     return Results.BadRequest("ConcurrentLoadCapacity chỉ nhận 1 hoặc 2.");
-  SampleData.Warehouse.ConcurrentLoadCapacity = req.ConcurrentLoadCapacity;
-  return Results.Ok(SampleData.Warehouse);
+  
+  var warehouse = await db.Warehouses.FirstOrDefaultAsync();
+  if (warehouse != null)
+  {
+      warehouse.ConcurrentLoadCapacity = req.ConcurrentLoadCapacity;
+      await db.SaveChangesAsync();
+  }
+  return Results.Ok(warehouse);
+});
+
+app.MapGet("/api/plans", async (AppDbContext db) => {
+    var plans = await db.PlanResults
+        .OrderByDescending(p => p.CreatedAt)
+        .Select(p => new { 
+            id = p.Id, 
+            createdAt = p.CreatedAt, 
+            success = p.Success, 
+            vehiclesUsed = p.VehiclesUsed, 
+            totalDistanceM = p.TotalDistanceM, 
+            message = p.Message 
+        })
+        .ToListAsync();
+    return Results.Ok(plans);
+});
+
+app.MapGet("/api/plans/{id}", async (string id, AppDbContext db) => {
+    var plan = await db.PlanResults.Include(p => p.Stops).FirstOrDefaultAsync(p => p.Id == id);
+    if (plan == null) return Results.NotFound();
+    return Results.Ok(plan);
 });
 
 Console.WriteLine("OR-Tools Lab → http://localhost:5190");

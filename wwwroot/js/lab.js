@@ -12,11 +12,82 @@
   const STATUS_OPTIONS = ['Available', 'Maintenance', 'OnTrip'];
   const FLEET_STORAGE_KEY = 'ortools-lab-fleet-v1';
 
+  function parseAndCamelCase(jsonStr) {
+    try {
+      const arr = JSON.parse(jsonStr || '[]');
+      if (!Array.isArray(arr)) return arr;
+      return arr.map(item => {
+        if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+          const obj = {};
+          for (const key in item) {
+            obj[key.charAt(0).toLowerCase() + key.slice(1)] = item[key];
+          }
+          return obj;
+        }
+        return item;
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+
   let orders = [];
   let warehouseData = null;
   let fleetMeta = { total: 10, available: 10, minSize: 1, maxSize: 50 };
   let map = null;
   let mapLayerGroup = null;
+  let currentVehicleLayers = {};
+  let activeVehicleMapFilter = null;
+
+  function filterMapByVehicle(vid) {
+    if (!mapLayerGroup) return;
+    
+    if (activeVehicleMapFilter === vid) {
+      activeVehicleMapFilter = null;
+    } else {
+      activeVehicleMapFilter = vid;
+    }
+    
+    Object.entries(currentVehicleLayers).forEach(([id, layer]) => {
+      if (!activeVehicleMapFilter || activeVehicleMapFilter === id) {
+        if (!mapLayerGroup.hasLayer(layer)) mapLayerGroup.addLayer(layer);
+      } else {
+        if (mapLayerGroup.hasLayer(layer)) mapLayerGroup.removeLayer(layer);
+      }
+    });
+
+    const legendEl = document.getElementById('map-legend');
+    if (legendEl) {
+      legendEl.querySelectorAll('.legend-item').forEach(l => {
+        if (!activeVehicleMapFilter) {
+          l.style.opacity = '1';
+          l.style.fontWeight = 'normal';
+        } else if (l.dataset.vid === activeVehicleMapFilter) {
+          l.style.opacity = '1';
+          l.style.fontWeight = 'bold';
+        } else {
+          l.style.opacity = '0.4';
+          l.style.fontWeight = 'normal';
+        }
+      });
+    }
+
+    const cardsEl = document.getElementById('vehicle-cards');
+    if (cardsEl) {
+      cardsEl.querySelectorAll('.vehicle-card').forEach(c => {
+        if (!activeVehicleMapFilter) {
+          c.style.opacity = '1';
+          c.style.borderColor = 'transparent';
+        } else if (c.dataset.vid === activeVehicleMapFilter) {
+          c.style.opacity = '1';
+          c.style.borderColor = '#2563EB';
+        } else {
+          c.style.opacity = '0.5';
+          c.style.borderColor = 'transparent';
+        }
+      });
+    }
+  }
 
   function saveFleetConfig(items) {
     try {
@@ -73,7 +144,53 @@
     renderOrders(orders);
     renderWarehouse(warehouse);
     document.getElementById('load-capacity').value = String(warehouse.concurrentLoadCapacity);
+    await loadHistory();
   }
+
+  async function loadHistory() {
+    const section = document.getElementById('history-section');
+    try {
+      const plans = await fetch('/api/plans').then(r => r.json());
+      if (plans && plans.length > 0) {
+        section.hidden = false;
+        const tbody = document.querySelector('#tbl-history tbody');
+        tbody.innerHTML = plans.map(p => `
+          <tr style="cursor:pointer" onclick="window.viewHistoryPlan('${p.id}')">
+            <td>${new Date(p.createdAt).toLocaleString()}</td>
+            <td>${p.success ? '✅ Thành công' : '❌ Thất bại'}</td>
+            <td>${p.vehiclesUsed}</td>
+            <td>${(p.totalDistanceM / 1000).toFixed(1)} km</td>
+            <td>${p.message}</td>
+          </tr>
+        `).join('');
+      } else {
+        section.hidden = true;
+      }
+    } catch (e) {
+      console.error('Failed to load history', e);
+    }
+  }
+
+  window.viewHistoryPlan = async function(id) {
+    try {
+      const plan = await fetch(`/api/plans/${id}`).then(r => r.json());
+      if (plan) {
+        plan.vehicleSummaries = parseAndCamelCase(plan.vehicleSummariesJson);
+        plan.optimizationInsights = parseAndCamelCase(plan.optimizationInsightsJson);
+        plan.dockSchedule = parseAndCamelCase(plan.dockScheduleJson);
+        plan.validations = parseAndCamelCase(plan.validationsJson);
+        plan.convoyChecks = parseAndCamelCase(plan.convoyChecksJson);
+        await renderResult(plan, plan.id);
+        
+        // Hide confirm button since it's history
+        document.getElementById('btn-confirm-plan').style.display = 'none';
+        document.getElementById('btn-export-excel').style.display = 'inline-block';
+        document.getElementById('btn-export-pdf').style.display = 'inline-block';
+      }
+    } catch (e) {
+      alert('Không tải được lịch sử: ' + e.message);
+    }
+  };
 
   function syncFleetControls() {
     const sizeInput = document.getElementById('fleet-size');
@@ -282,7 +399,13 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selectedOrderIds: ids, balanceLevel })
       }).then(r => r.json());
-      await renderResult(response.result, response.planId);
+      let r = response.result;
+      r.vehicleSummaries = parseAndCamelCase(r.vehicleSummariesJson);
+      r.optimizationInsights = parseAndCamelCase(r.optimizationInsightsJson);
+      r.dockSchedule = parseAndCamelCase(r.dockScheduleJson);
+      r.validations = parseAndCamelCase(r.validationsJson);
+      r.convoyChecks = parseAndCamelCase(r.convoyChecksJson);
+      await renderResult(r, response.planId);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Lập kế hoạch';
@@ -389,7 +512,7 @@
     }
     el.hidden = false;
     el.innerHTML = summaries.map(s => `
-      <div class="vehicle-card">
+      <div class="vehicle-card" data-vid="${s.vehicleId}" style="cursor:pointer; border: 2px solid transparent; transition: all 0.2s;">
         <div class="plate">${s.vehiclePlate}</div>
         <div class="metric"><strong>${s.orderCount}</strong> đơn giao</div>
         <div class="metric">${s.stopCount} điểm dừng · ${(s.routeDistanceM / 1000).toFixed(1)} km</div>
@@ -399,6 +522,10 @@
         </div>
       </div>
     `).join('');
+
+    el.querySelectorAll('.vehicle-card').forEach(c => {
+      c.addEventListener('click', () => filterMapByVehicle(c.dataset.vid));
+    });
   }
 
   function renderOptimizationInsights(insights) {
@@ -460,6 +587,8 @@
     statusEl.textContent = 'Đang tải tuyến đường thực tế (OSRM)…';
     initMap();
     mapLayerGroup.clearLayers();
+    currentVehicleLayers = {};
+    activeVehicleMapFilter = null;
 
     const whLat = warehouseData.lat;
     const whLng = warehouseData.lng;
@@ -481,7 +610,7 @@
     let roadOk = 0;
     let idx = 0;
 
-    for (const [, data] of Object.entries(byVehicle)) {
+    for (const [vId, data] of Object.entries(byVehicle)) {
       const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
       idx++;
       const ordered = [...data.stops].sort((a, b) => a.arrivalMin - b.arrivalMin);
@@ -498,7 +627,10 @@
       const roadPath = await fetchRoadRoute(waypoints);
       if (roadPath.length > waypoints.length) roadOk++;
 
-      L.polyline(roadPath, { color, weight: 5, opacity: 0.85 }).addTo(mapLayerGroup);
+      const vLayer = L.layerGroup();
+      currentVehicleLayers[vId] = vLayer;
+
+      L.polyline(roadPath, { color, weight: 5, opacity: 0.85 }).addTo(vLayer);
 
       uniquePoints.forEach((s, i) => {
         bounds.extend([s.lat, s.lng]);
@@ -515,7 +647,7 @@
             Xe: ${s.vehiclePlate}<br>
             Đến: ${fmtTime(s.arrivalMin)}
           `)
-          .addTo(mapLayerGroup);
+          .addTo(vLayer);
 
         L.marker([s.lat, s.lng], {
           icon: L.divIcon({
@@ -524,13 +656,18 @@
             iconSize: [20, 16],
             iconAnchor: [10, 8]
           })
-        }).addTo(mapLayerGroup);
+        }).addTo(vLayer);
       });
 
-      legendItems.push(`<span><span style="background:${color};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px"></span>${data.plate}</span>`);
+      vLayer.addTo(mapLayerGroup);
+
+      legendItems.push(`<span class="legend-item" data-vid="${vId}" style="cursor:pointer; padding:2px 6px; border-radius:4px; transition: all 0.2s;"><span style="background:${color};display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px"></span>${data.plate}</span>`);
     }
 
-    legendEl.innerHTML = legendItems.join('');
+    legendEl.innerHTML = legendItems.join(' ');
+    legendEl.querySelectorAll('.legend-item').forEach(el => {
+      el.addEventListener('click', () => filterMapByVehicle(el.dataset.vid));
+    });
     statusEl.textContent = roadOk > 0
       ? `Tuyến theo đường thực tế (OSRM / OpenStreetMap) — ${roadOk}/${Object.keys(byVehicle).length} xe`
       : 'Không tải được OSRM — hiển thị đường chim bay';
@@ -553,6 +690,7 @@
       btn.style.display = 'none';
       document.getElementById('btn-export-excel').style.display = 'inline-block';
       document.getElementById('btn-export-pdf').style.display = 'inline-block';
+      await loadHistory();
     } catch (e) {
       alert('Lỗi: ' + e.message);
       btn.disabled = false;
