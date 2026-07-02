@@ -2,6 +2,8 @@ namespace OrToolsLab.Models;
 
 public class PlanResult
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
     public bool Success { get; set; }
     public string Message { get; set; } = "";
     public bool UsedRoadNetwork { get; set; }
@@ -9,11 +11,11 @@ public class PlanResult
     public int FleetTotal { get; set; }
     public int FleetAvailable { get; set; }
     public List<RouteStop> Stops { get; set; } = [];
-    public List<DockSlot> DockSchedule { get; set; } = [];
-    public List<VehicleSummary> VehicleSummaries { get; set; } = [];
-    public List<OptimizationInsight> OptimizationInsights { get; set; } = [];
-    public List<ValidationRow> Validations { get; set; } = [];
-    public List<ConvoyCheck> ConvoyChecks { get; set; } = [];
+    public string DockScheduleJson { get; set; } = "[]";
+    public string VehicleSummariesJson { get; set; } = "[]";
+    public string OptimizationInsightsJson { get; set; } = "[]";
+    public string ValidationsJson { get; set; } = "[]";
+    public string ConvoyChecksJson { get; set; } = "[]";
     public long TotalDistanceM { get; set; }
     public long EstimatedNaiveDistanceM { get; set; }
     public int VehiclesUsed { get; set; }
@@ -51,6 +53,8 @@ public class DockSlot
 
 public class RouteStop
 {
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string PlanResultId { get; set; } = "";
     public int Sequence { get; set; }
     public string VehicleId { get; set; } = "";
     public string VehiclePlate { get; set; } = "";

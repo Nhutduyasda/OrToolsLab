@@ -375,11 +375,11 @@ public class TransportPlanner
       Message = $"Lập kế hoạch thành công — {vehiclesUsed} xe, {stops.Count} điểm giao." +
                 (usedRoadNetwork ? " (ma trận OSRM — đường thực tế)" : " (ma trận chim bay — OSRM không khả dụng)"),
       Stops = stops,
-      DockSchedule = dockSchedule,
-      VehicleSummaries = vehicleSummaries,
-      OptimizationInsights = insights,
-      Validations = validations,
-      ConvoyChecks = convoyChecks,
+      DockScheduleJson = System.Text.Json.JsonSerializer.Serialize(dockSchedule),
+      VehicleSummariesJson = System.Text.Json.JsonSerializer.Serialize(vehicleSummaries),
+      OptimizationInsightsJson = System.Text.Json.JsonSerializer.Serialize(insights),
+      ValidationsJson = System.Text.Json.JsonSerializer.Serialize(validations),
+      ConvoyChecksJson = System.Text.Json.JsonSerializer.Serialize(convoyChecks),
       TotalDistanceM = totalDist,
       EstimatedNaiveDistanceM = naiveDist,
       VehiclesUsed = vehiclesUsed

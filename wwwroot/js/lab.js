@@ -277,21 +277,40 @@
     const balanceLevel = parseInt(document.getElementById('balance-level').value, 10);
 
     try {
-      const result = await fetch('/api/plan', {
+      const response = await fetch('/api/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ selectedOrderIds: ids, balanceLevel })
       }).then(r => r.json());
-      await renderResult(result);
+      await renderResult(response.result, response.planId);
     } finally {
       btn.disabled = false;
       btn.textContent = 'Lập kế hoạch';
     }
   });
 
-  async function renderResult(r) {
+  let currentPlanId = null;
+
+  async function renderResult(r, planId) {
+    currentPlanId = planId;
     const section = document.getElementById('result-section');
     section.hidden = false;
+
+    const btnConfirm = document.getElementById('btn-confirm-plan');
+    const btnExcel = document.getElementById('btn-export-excel');
+    const btnPdf = document.getElementById('btn-export-pdf');
+
+    if (r.success) {
+      btnConfirm.style.display = 'inline-block';
+      btnExcel.style.display = 'none'; // Only available after confirm
+      btnPdf.style.display = 'none';
+      btnConfirm.disabled = false;
+      btnConfirm.textContent = 'Xác nhận kế hoạch';
+    } else {
+      btnConfirm.style.display = 'none';
+      btnExcel.style.display = 'none';
+      btnPdf.style.display = 'none';
+    }
 
     const msg = document.getElementById('plan-message');
     msg.textContent = r.message;
@@ -518,6 +537,36 @@
     map.fitBounds(bounds.pad(0.12));
     setTimeout(() => map.invalidateSize(), 300);
   }
+
+  document.getElementById('btn-confirm-plan').addEventListener('click', async () => {
+    if (!currentPlanId) return;
+    const btn = document.getElementById('btn-confirm-plan');
+    btn.disabled = true;
+    btn.textContent = 'Đang xác nhận...';
+    
+    try {
+      const res = await fetch(`/api/plan/${currentPlanId}/confirm`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      alert(data.message);
+      
+      btn.style.display = 'none';
+      document.getElementById('btn-export-excel').style.display = 'inline-block';
+      document.getElementById('btn-export-pdf').style.display = 'inline-block';
+    } catch (e) {
+      alert('Lỗi: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Xác nhận kế hoạch';
+    }
+  });
+
+  document.getElementById('btn-export-excel').addEventListener('click', () => {
+    if (currentPlanId) window.open(`/api/orders/export/excel?planId=${currentPlanId}`, '_blank');
+  });
+
+  document.getElementById('btn-export-pdf').addEventListener('click', () => {
+    if (currentPlanId) window.open(`/api/orders/export/pdf?planId=${currentPlanId}`, '_blank');
+  });
 
   load();
 })();

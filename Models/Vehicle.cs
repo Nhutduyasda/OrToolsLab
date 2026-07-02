@@ -15,4 +15,5 @@ public class Vehicle
     public long MaxWeightKg { get; set; }
     public long MaxVolumeM3 { get; set; }
     public string? Preference { get; set; }
+    public string? DriverName { get; set; }
 }
