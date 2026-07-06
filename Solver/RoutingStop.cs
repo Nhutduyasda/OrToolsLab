@@ -13,6 +13,10 @@ internal sealed class RoutingStop
   public long VolumeM3 { get; init; }
   public double Lat { get; init; }
   public double Lng { get; init; }
+  public int? TimeWindowStartMin { get; init; }
+  public int? TimeWindowEndMin { get; init; }
+  public bool IsVIP { get; init; }
+  public bool IsFrozen { get; init; }
   public int ShardIndex { get; init; }
   public int ShardCount { get; init; }
 }

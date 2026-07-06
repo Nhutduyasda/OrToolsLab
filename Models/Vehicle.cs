@@ -16,4 +16,5 @@ public class Vehicle
     public long MaxVolumeM3 { get; set; }
     public string? Preference { get; set; }
     public string? DriverName { get; set; }
+    public bool IsRefrigerated { get; set; }
 }

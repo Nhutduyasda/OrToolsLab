@@ -113,10 +113,58 @@ public class TransportPlanner
   for (int v = 0; v < numVehicles; v++)
     timeDim.CumulVar(routing.Start(v)).SetRange(depotOpen, depotClose);
 
+  // Khung giờ giao hàng của từng khách hàng
+  for (int i = 0; i < routingStops.Count; i++)
+  {
+      var stop = routingStops[i];
+      int nodeIndex = i + 1; // 0 là kho
+      long index = manager.NodeToIndex(nodeIndex);
+
+      long startMin = stop.TimeWindowStartMin ?? depotOpen;
+      long endMin = stop.TimeWindowEndMin ?? depotClose;
+
+      timeDim.CumulVar(index).SetRange(startMin, endMin);
+  }
+
     // Convoy: cùng mã đơn trên xe khác nhau → cùng giờ xuất phát & cùng giờ giao
     ApplyConvoyConstraints(routing, manager, timeDim, routingStops, fleet);
 
     // Kho: lịch bốc tính sau solve (greedy) — hard dock trong solver dễ infeasible khi fleet nhỏ (6 xe / 50 đơn)
+
+    // Thêm tùy chọn bỏ qua đơn hàng (Disjunction) - Yêu cầu 2
+    long dropPenalty = 1_000_000; // Phạt nặng nếu bỏ qua đơn hàng
+    for (int i = 0; i < routingStops.Count; i++)
+    {
+        if (!routingStops[i].IsVIP) // Nếu không phải VIP -> Cho phép rớt đơn
+        {
+            long nodeIndex = manager.NodeToIndex(i + 1);
+            routing.AddDisjunction(new long[] { nodeIndex }, dropPenalty);
+        }
+    }
+
+    // Yêu cầu 3: Tương thích Hàng hóa và Xe (Hàng đông lạnh chỉ đi xe lạnh)
+    var solver = routing.solver();
+    for (int i = 0; i < routingStops.Count; i++)
+    {
+        var stop = routingStops[i];
+        if (stop.IsFrozen)
+        {
+            long nodeIndex = manager.NodeToIndex(i + 1);
+            
+            var allowedVehicles = new List<long>();
+            for (int v = 0; v < fleet.Count; v++)
+            {
+                if (fleet[v].IsRefrigerated)
+                {
+                    allowedVehicles.Add(v);
+                }
+            }
+            
+            allowedVehicles.Add(-1); // -1 cho phép rớt đơn nếu có Disjunction
+            
+            routing.VehicleVar(nodeIndex).SetValues(allowedVehicles.ToArray());
+        }
+    }
 
     var parameters = operations_research_constraint_solver.DefaultRoutingSearchParameters();
     parameters.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.ParallelCheapestInsertion;
@@ -182,6 +230,10 @@ public class TransportPlanner
           VolumeM3 = shard.Sum(o => o.VolumeM3),
           Lat = children[0].Lat,
           Lng = children[0].Lng,
+          TimeWindowStartMin = children[0].TimeWindowStartMin,
+          TimeWindowEndMin = children[0].TimeWindowEndMin,
+          IsVIP = children[0].IsVIP,
+          IsFrozen = children[0].IsFrozen,
           ShardIndex = i,
           ShardCount = shards.Count
         });

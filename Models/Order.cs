@@ -28,5 +28,9 @@ public class Order
     public decimal OrderValue { get; set; }
     public string? ItemType { get; set; }
     public string? Note { get; set; }
+    public int? TimeWindowStartMin { get; set; }
+    public int? TimeWindowEndMin { get; set; }
+    public bool IsVIP { get; set; }
+    public bool IsFrozen { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.New;
 }
